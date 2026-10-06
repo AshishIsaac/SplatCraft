@@ -1,0 +1,121 @@
+name: ci
+
+# What runs where (free GitHub runners have no GPU):
+#   lint     every push / PR   ruff + the viewer's JavaScript parses
+#   test     every push / PR   rasterizer gradients vs dense autograd, rANS, codec, API, launcher;
+#                              Linux & Windows, Python 3.10 & 3.12, CPU PyTorch
+#   viewer   every push / PR   the WebGPU viewer in headless Chrome on the SwiftShader (CPU) adapter
+#                              renders the demo scene to within 45 dB PSNR of the PyTorch rasterizer
+#   smoke    every push / PR   the REAL pipeline on CPU: download lego, train (smoke preset),
+#                              compress, decode, evaluate PSNR/SSIM/LPIPS; uploads the run
+#   docker   every push / PR   the image builds and the web app answers
+# GPU training and the benchmark table: `splatcraft bench` on a GPU machine (see README).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install "ruff>=0.6"
+      - run: ruff check src tests run.py --target-version py310
+      - name: Viewer and dashboard JavaScript parse
+        run: |
+          for f in web/js/*.js; do cp "$f" /tmp/check.mjs && node --check /tmp/check.mjs || exit 1; done
+          node --check src/splatcraft/server/static/app.js
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -r requirements/torch-cpu.txt
+      - run: pip install -e ".[dev]" scipy
+      - name: Unit, gradient, codec, API and launcher tests
+        run: pytest -m "not browser" --durations=10
+
+  viewer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements/torch-cpu.txt && pip install -e ".[dev,browser]"
+      - run: python -m playwright install --with-deps chromium
+      - name: WebGPU viewer == PyTorch rasterizer (SwiftShader adapter)
+        env:
+          SPLATCRAFT_SWIFTSHADER: "1"
+          SPLATCRAFT_BROWSER_CHANNEL: ""
+        run: pytest tests/test_viewer_browser.py -rs
+
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      SPLATCRAFT_HOME: ${{ github.workspace }}/ci-workspace
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libgl1
+      - run: pip install -r requirements/torch-cpu.txt && pip install -e .
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ci-workspace/data
+            ci-workspace/models
+          key: data-${{ hashFiles('src/splatcraft/scene/download.py') }}
+      - run: splatcraft doctor
+      - run: splatcraft data download lego
+      - name: Train -> compress -> evaluate, every stage on CPU
+        run: splatcraft train lego -c smoke --name ci --eval --publish ci-lego
+      - name: The decoded .splatc is a real scene, close to the uncompressed one
+        run: |
+          python - <<'EOF'
+          import json, pathlib, sys
+          d = pathlib.Path("ci-workspace/runs/ci")
+          m = json.loads((d / "metrics.json").read_text())
+          c = json.loads((d / "compress_report.json").read_text())
+          print(json.dumps({k: {x: m[k][x] for x in ("psnr", "ssim", "lpips", "bytes")} for k in ("ply", "splatc")}, indent=1))
+          print("ratio vs .ply:", c["ratio_vs_ply_file"])
+          ok = m["ply"]["psnr"] > 16 and m["splatc"]["psnr"] > m["ply"]["psnr"] - 1.5 and c["ratio_vs_ply_file"] > 5
+          sys.exit(0 if ok else 1)
+          EOF
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: smoke-run
+          path: |
+            ci-workspace/runs/ci/*.json
+            ci-workspace/runs/ci/renders
+            ci-workspace/runs/ci/scene.splatc
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f docker/Dockerfile --build-arg TORCH=cpu -t splatcraft:ci .
+      - name: Web app answers and serves the demo scene
+        run: |
+          docker run -d --name sc -p 8770:8770 -e SPLATCRAFT_SKIP_SETUP=1 splatcraft:ci
+          for i in $(seq 1 60); do curl -sf http://localhost:8770/api/health && break; sleep 2; done
+          curl -sf http://localhost:8770/api/scenes | grep -q lego
+          curl -sf -o /dev/null http://localhost:8770/scenes/lego.splatc

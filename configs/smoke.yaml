@@ -1,0 +1,7 @@
+# Seconds-long end-to-end check (CI, `splatcraft doctor`): tiny resolution, few iterations.
+data: {max_width: 160, max_images: 24, random_init: 8000}
+train: {iterations: 300, sh_increase_every: 100, max_gaussians: 60000}
+densify: {start: 50, stop: 250, every: 50, opacity_reset_every: 10000, screen_size_after: 10000}
+compaction: {at: [200], keep: 0.7}
+compress: {sh_codebook: 256, kmeans_iters: 5, chunks: 3}
+eval: {lpips_net: alex, max_test_views: 4}

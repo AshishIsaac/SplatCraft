@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "splatcraft"
+version = "1.0.0"
+description = "Browser-native 3D Gaussian Splatting: train a scene from a phone video, compress it 15-20x, and orbit it at high FPS in any WebGPU browser."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Ashish V Isaac" }]
+keywords = ["gaussian-splatting", "3dgs", "neural-rendering", "webgpu", "differentiable-rendering", "compression",
+            "vector-quantization", "rans", "entropy-coding", "colmap", "structure-from-motion", "novel-view-synthesis"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Scientific/Engineering :: Image Processing",
+    "Topic :: Multimedia :: Graphics :: 3D Rendering",
+]
+# torch / torchvision are NOT listed here: run.py installs the right build (CUDA or CPU) from
+# requirements/torch-*.txt first. Upper bounds keep a fresh clone on versions this repo was verified with.
+dependencies = [
+    "numpy>=1.26,<3",
+    "opencv-python>=4.9,<6",
+    "PyYAML>=6.0,<7",
+    "pillow>=10,<13",
+    "pycolmap>=3.11,<5",
+    "lpips>=0.1.4,<0.2",
+    "fastapi>=0.110,<1",
+    "uvicorn>=0.29,<1",
+    "python-multipart>=0.0.9,<1",
+]
+
+[project.urls]
+Homepage = "https://github.com/AshishIsaac/SplatCraft"
+Repository = "https://github.com/AshishIsaac/SplatCraft.git"
+Issues = "https://github.com/AshishIsaac/SplatCraft/issues"
+
+[project.optional-dependencies]
+# Browser benchmarks / viewer tests drive a real Chrome or Edge with WebGPU.
+browser = ["playwright>=1.45,<2"]
+dev = ["pytest>=7.4", "ruff>=0.6", "httpx>=0.27"]
+
+[project.scripts]
+splatcraft = "splatcraft.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+splatcraft = ["server/static/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q -ra"
+markers = [
+    "slow: longer end-to-end tests",
+    "data: needs downloaded datasets (python run.py once)",
+    "gpu: needs a CUDA GPU",
+    "browser: needs Chrome/Edge with WebGPU and playwright",
+]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::FutureWarning", "ignore::UserWarning"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["src", "tests", "benchmarks", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "NPY"]
+ignore = ["E501", "B905", "SIM108", "E741", "E731"]

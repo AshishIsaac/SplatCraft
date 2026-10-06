@@ -1,0 +1,5 @@
+# ~10-25 min on a laptop GPU: the default for uploaded videos and the quick benchmark.
+data: {max_width: 640}
+train: {iterations: 7000, max_gaussians: 400000}
+densify: {stop: 5000, opacity_reset_every: 3000}
+compaction: {at: [5500], keep: 0.6}

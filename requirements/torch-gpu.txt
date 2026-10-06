@@ -1,0 +1,5 @@
+# PyTorch with CUDA 12.6 (bundled; only an NVIDIA driver >= 560 is needed). Ampere/Ada/Hopper/Blackwell.
+--index-url https://download.pytorch.org/whl/cu126
+--extra-index-url https://pypi.org/simple
+torch==2.14.1
+torchvision==0.29.1

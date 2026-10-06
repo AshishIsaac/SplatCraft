@@ -1,0 +1,30 @@
+# One-time setup state (per machine): virtual environment, install log, remembered --home/--venv
+.venv/
+.setup/
+
+# Everything downloaded or produced: datasets, runs, jobs, published scenes (recreated by run.py)
+workspace/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Image caches written next to datasets
+_cache_*/
+
+# Large scene files outside the curated demo set
+*.ply
+!tests/data/*.ply
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

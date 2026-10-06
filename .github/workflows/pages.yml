@@ -1,0 +1,47 @@
+name: pages
+
+# The live demo: the static WebGPU viewer (web/) plus the demo scenes, published to GitHub Pages.
+# Enable it once under Settings -> Pages -> Source: "GitHub Actions". The site is then
+#   https://<user>.github.io/SplatCraft/            (lego)
+#   https://<user>.github.io/SplatCraft/?scene=bonsai
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scene list for the viewer's scene picker
+        run: |
+          python - <<'EOF'
+          import json, pathlib, struct
+          out = []
+          for p in sorted(pathlib.Path("web/scenes").glob("*.splatc")):
+              b = p.read_bytes()
+              h = json.loads(b[12:12 + struct.unpack_from("<I", b, 8)[0]])
+              out.append({"name": p.stem, "bytes": p.stat().st_size, "gaussians": h["count"]})
+          pathlib.Path("web/scenes/index.json").write_text(json.dumps(out))
+          print(out)
+          EOF
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with: { path: web }
+      - id: deployment
+        uses: actions/deploy-pages@v4

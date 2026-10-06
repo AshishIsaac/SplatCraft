@@ -1,0 +1,5 @@
+# The 3DGS paper schedule (30k iterations): benchmark-table quality. ~1-3 h on a laptop GPU.
+data: {max_width: 800}
+train: {iterations: 30000, max_gaussians: 600000}
+densify: {stop: 15000}
+compaction: {at: [16000], keep: 0.6}

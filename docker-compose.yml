@@ -1,0 +1,15 @@
+# docker compose up        -> web app on http://localhost:8770 (GPU)
+# docker compose run --rm splatcraft train lego -c quick --publish lego-mine
+services:
+  splatcraft:
+    build: { context: ., dockerfile: docker/Dockerfile }
+    image: splatcraft
+    ports: ["8770:8770"]
+    volumes: ["splatcraft-ws:/workspace"]
+    shm_size: "2gb"
+    deploy:
+      resources:
+        reservations:
+          devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
+volumes:
+  splatcraft-ws:

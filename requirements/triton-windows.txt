@@ -1,0 +1,3 @@
+# Triton for Windows (Linux PyTorch wheels already include Triton). Compiles the fused rasterizer kernels
+# and bundles its own compiler: no Visual Studio / CUDA toolkit needed. Verified with torch 2.14.1.
+triton-windows>=3.5,<3.8

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SplatCraft Viewer</title>
+<meta name="description" content="Photoreal 3D Gaussian Splatting scenes, streamed and rendered with a hand-written WebGPU pipeline.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cellipse cx='12' cy='14' rx='9' ry='6' fill='%235b9cf5' opacity='.85' transform='rotate(-25 12 14)'/%3E%3Cellipse cx='20' cy='19' rx='8' ry='5' fill='%23f2a65a' opacity='.85' transform='rotate(30 20 19)'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0d0f13; --panel: rgba(18, 21, 27, .78); --line: rgba(255, 255, 255, .09); --fg: #e9ecf1;
+    --muted: #8d95a3; --accent: #5b9cf5; --accent2: #f2a65a; --ok: #3fbf7f; --err: #ef6b62;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+  #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
+  #view:active { cursor: grabbing; }
+  .glass { background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  header { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 12px; right: 12px; display: flex;
+    gap: 10px; align-items: center; pointer-events: none; }
+  header > * { pointer-events: auto; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 8px 14px 8px 10px; min-width: 0; }
+  .brand svg { flex: none; }
+  .brand b { font-weight: 650; letter-spacing: .2px; }
+  .brand span { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spacer { flex: 1; }
+  .stats { display: grid; grid-template-columns: auto auto; gap: 2px 14px; padding: 10px 14px; font-size: 12px;
+    font-variant-numeric: tabular-nums; position: fixed; top: calc(max(12px, env(safe-area-inset-top)) + 54px); left: 12px; }
+  .stats dt { color: var(--muted); } .stats dd { margin: 0; text-align: right; }
+  #stat-fps { font-size: 20px; font-weight: 650; color: var(--fg); }
+  .bar { position: fixed; bottom: max(12px, env(safe-area-inset-bottom)); left: 50%; transform: translateX(-50%);
+    display: flex; gap: 6px; padding: 6px; flex-wrap: wrap; justify-content: center; max-width: calc(100% - 24px); }
+  button, select { font: inherit; color: var(--fg); background: rgba(255, 255, 255, .06); border: 1px solid var(--line);
+    border-radius: 8px; padding: 7px 12px; cursor: pointer; }
+  button:hover, select:hover { background: rgba(255, 255, 255, .12); }
+  button:disabled { opacity: .6; cursor: default; }
+  button.primary { background: var(--accent); border-color: transparent; color: #fff; }
+  button.primary:hover { filter: brightness(1.1); }
+  #progress-wrap { position: fixed; top: 0; left: 0; right: 0; height: 3px; background: rgba(255,255,255,.06); }
+  #progress { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .2s; }
+  #progress-wrap.done { opacity: 0; transition: opacity 1s .6s; }
+  .center { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .card { padding: 22px 26px; max-width: min(460px, calc(100% - 32px)); pointer-events: auto; }
+  .card h2 { margin: 0 0 8px; font-size: 17px; }
+  .card p { margin: 6px 0; color: var(--muted); }
+  .spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.12);
+    border-top-color: var(--accent); animation: spin 0.9s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #bench-out { position: fixed; right: 12px; top: calc(max(12px, env(safe-area-inset-top)) + 54px); width: min(360px, calc(100% - 24px)); padding: 14px; }
+  #bench-out textarea { width: 100%; height: 120px; margin-top: 8px; background: rgba(0,0,0,.3); color: var(--muted);
+    border: 1px solid var(--line); border-radius: 8px; font: 11px/1.35 ui-monospace, Consolas, monospace; resize: vertical; }
+  #bench-fps { font-size: 26px; font-weight: 700; }
+  .help { position: fixed; right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); padding: 8px 12px; font-size: 12px; color: var(--muted); }
+  kbd { font: 11px ui-monospace, Consolas, monospace; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; }
+  .no-ui header, .no-ui .stats, .no-ui .bar, .no-ui .help, .no-ui #progress-wrap { display: none !important; }
+  @media (max-width: 1100px) { .help { display: none; } }
+  @media (max-width: 720px) {
+    .stats { grid-template-columns: auto auto auto auto auto auto; top: auto; bottom: calc(max(12px, env(safe-area-inset-bottom)) + 104px);
+      left: 12px; right: 12px; padding: 6px 10px; gap: 0 8px; align-items: baseline; }
+    .stats > :is(dt, dd):nth-of-type(2), .stats > :is(dt, dd):nth-of-type(3), .stats > :is(dt, dd):nth-of-type(n+6) { display: none; }
+    #stat-fps { font-size: 15px; }
+    .bar button, .bar select { padding: 7px 9px; }
+  }
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div id="progress-wrap"><div id="progress"></div></div>
+
+<header>
+  <div class="brand glass">
+    <svg width="22" height="22" viewBox="0 0 32 32" aria-hidden="true"><ellipse cx="12" cy="14" rx="9" ry="6" fill="#5b9cf5" opacity=".85" transform="rotate(-25 12 14)"/><ellipse cx="20" cy="19" rx="8" ry="5" fill="#f2a65a" opacity=".85" transform="rotate(30 20 19)"/></svg>
+    <b>SplatCraft</b><span id="scene-name"></span>
+  </div>
+  <div class="spacer"></div>
+  <select id="scene-pick" class="glass" title="Scene" hidden></select>
+  <button id="btn-share" class="glass">Share</button>
+</header>
+
+<dl class="stats glass">
+  <dt>FPS</dt><dd id="stat-fps">–</dd>
+  <dt>Frame</dt><dd id="stat-ms"></dd>
+  <dt>GPU time</dt><dd id="stat-gpu-ms">–</dd>
+  <dt>Gaussians</dt><dd id="stat-n">–</dd>
+  <dt>Streamed</dt><dd id="stat-mb">–</dd>
+  <dt>Instances</dt><dd id="stat-inst">–</dd>
+  <dt>Resolution</dt><dd id="stat-res">–</dd>
+  <dt>GPU</dt><dd id="stat-gpu" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">–</dd>
+</dl>
+
+<div class="bar glass">
+  <button id="btn-reset" title="Back to the start view (R)">Reset</button>
+  <button id="btn-view" title="Snap to the capture cameras (V)">Views</button>
+  <button id="btn-spin" title="Auto-rotate">Spin</button>
+  <select id="res-scale" title="Render resolution">
+    <option value="0.5">50 %</option><option value="0.75">75 %</option><option value="1">100 %</option>
+    <option value="1.5">150 %</option>
+  </select>
+  <button id="btn-bench" class="primary" title="Render a 360° orbit as fast as possible and report the frame rate">Benchmark</button>
+</div>
+
+<div class="help glass">
+  Drag <b>orbit</b> · Right-drag / Shift <b>pan</b> · Wheel <b>zoom</b> · <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>V</kbd> views
+</div>
+
+<div class="center" id="loading"><div class="card glass" style="text-align:center">
+  <div class="spinner"></div><div id="loading-msg">Loading scene…</div>
+</div></div>
+
+<div class="center" id="nogpu" hidden><div class="card glass">
+  <h2>WebGPU is not available</h2>
+  <p>This viewer renders Gaussian splats with WebGPU compute shaders. Use a current Chrome, Edge or Opera
+    (desktop or Android), Safari 26+ on iOS/macOS, or Firefox 141+ on Windows.</p>
+  <p>On Linux Chrome, enable <code>chrome://flags/#enable-unsafe-webgpu</code>.</p>
+</div></div>
+
+<div class="center" id="error" hidden><div class="card glass">
+  <h2>Something went wrong</h2><p id="error-msg"></p>
+</div></div>
+
+<div id="bench-out" class="glass" hidden>
+  <div style="display:flex;justify-content:space-between;align-items:center">
+    <div><div style="color:var(--muted);font-size:12px">Benchmark (360° orbit)</div><div id="bench-fps"></div></div>
+    <button id="bench-close" aria-label="Close">×</button>
+  </div>
+  <div id="bench-detail" style="color:var(--muted);font-size:12px;margin-top:4px"></div>
+  <div id="bench-saved" hidden style="color:var(--ok);font-size:12px;margin-top:6px">Saved to the server's benchmark table.</div>
+  <textarea id="bench-json" readonly></textarea>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
